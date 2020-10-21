@@ -1,0 +1,294 @@
+---
+title: "Classification of Left and right brainers"
+author: "Venkat Koushik Muthyapu"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 5
+    code_folding: show
+    #df_print: paged
+    #df_print: kable
+    #toc_float: true
+      #collapsed: false
+      #smooth_scroll: TRUE
+    theme: cosmo #spacelab #yeti #united #cosmo
+    highlight: tango
+  pdf_document:
+    df_print: kable
+fontsize: 12pt
+geometry: margin=0.25in
+always_allow_html: yes
+---
+
+<style>
+/* HTML FORMATTING */
+h1, .h1, h2, .h2, h3, .h3, h4, .h4, h5, .h5 {
+  margin-top: 25px; /* space before each header */
+  font-weight: bold; /* bold headers */
+}
+</style>
+
+```{R, echo=FALSE}
+# I set some GLOBAL R chunk options here.
+#   (to hide this message add "echo=FALSE" to the code chunk options)
+
+knitr::opts_chunk$set(comment = NA, message = FALSE, warning = FALSE, width = 100)
+knitr::opts_chunk$set(fig.align = "center", fig.height = 4, fig.width = 6)
+
+knitr::opts_chunk$set(cache = TRUE, autodep=TRUE)  #$
+```
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+# Loading the data
+```{r cars}
+library(tidyverse)
+
+datcc <- read_csv(
+    "/Users/venkatkoushikmuthyapu/desktop/rakin/Phase3.csv"
+  ) 
+summary(datcc)
+
+```
+
+# Renaming the variables and cleaning the data
+```{R}
+datcc <-
+  datcc %>%
+  dplyr::rename(
+    LB_RB = `LB or Rb`
+,   HRC_Math = `HR Change Math test`
+,   HRC_Mem = `HR Change Memory Test`
+,   PDC_Math = `PDC Math Test`
+,   PDC_Mem = `PDC Memory Test`
+,   SPC_Math = `Systolic Pressure Change Math Test`
+,   SPC_Mem = `Systolic Pressure Change Memory Test`
+,   DPC_Math = `Diastolic Pressure Change Math Test`
+,   DPC_Mem = `Diastolic Pressure Change Memory Test`
+)
+
+datcc <-
+datcc %>% 
+  select(-`Participant #`)%>%
+  filter(  PDC_Mem < 7
+         , SPC_Math > -20
+         , SPC_Mem < 21) %>%
+  mutate(
+    LB_RB = factor(LB_RB)
+  )
+summary(datcc)
+
+```
+
+# Data exploration
+```{R, fig.height = 8, fig.width = 8, cache = FALSE}
+# Scatterplot matrix
+library(ggplot2)
+library(GGally)
+p <- ggpairs(datcc
+, mapping = ggplot2::aes(colour = LB_RB, alpha = 0.5)
+, progress=FALSE
+)
+print(p)
+```
+
+
+```{R, fig.height = 8, fig.width = 8, echo=FALSE}
+source("ada_functions.R")
+
+# Covariance matrices by Source
+datcc_cor_mat <- by(datcc %>% select(HRC_Math:DPC_Mem), datcc$LB_RB, cor)
+
+colors <- c("#A50F15", "#DE2D26", "#FB6A4A", "#FCAE91", "#FEE5D9", "white"
+          , "#EFF3FF")
+
+op <- par(no.readonly = TRUE) # the whole list of settable par's.
+# make wider left margin to fit contrast labels
+par(mfrow = c(2,2), mar = 0*rep(1, 4)) # order is c(bottom, left, top, right)
+  f_plot_corr_ellipse(datcc_cor_mat$LB, col=colors[5*datcc_cor_mat$LB + 6], main="LB correlation")
+  f_plot_corr_ellipse(datcc_cor_mat$RB, col=colors[5*datcc_cor_mat$RB + 6], main="RB correlation")
+par(op) # reset plotting options
+```
+
+
+# Model Selection 
+```{R, fig.height = 6, fig.width = 8}
+dat_datcc_d <- datcc %>% select(HRC_Math:DPC_Mem) # the data
+dat_datcc_c <- datcc %>% pull(LB_RB)       # the classes
+
+# start random number generator in same place for everyone
+# and so that random partitions are the same each time code is run
+set.seed(7)
+
+#library(klaR)  # don't run this since it does library(MASS) and breaks select() from dplyr
+# Backward
+step_datcc_b <-
+  klaR::stepclass(
+    dat_datcc_d
+  , dat_datcc_c
+  , method = "qda"
+  , improvement = 0.001 # stop criterion: improvement less than
+  , direction = "backward"
+  , start.vars = colnames(dat_datcc_d)
+  )
+## NOTE HERE
+step_datcc_b$formula
+# estimated correct/error rates
+step_datcc_b$result.pm
+```
+```{R}
+# Forward
+step_datcc_f <-
+  klaR::stepclass(
+    dat_datcc_d
+  , dat_datcc_c
+  , method =  "qda"
+  , improvement = 0.001 # stop criterion: improvement less than
+  , direction = "forward"
+  , start.vars = ""
+  )
+## NOTE HERE
+step_datcc_f$formula
+# estimated correct/error rates
+step_datcc_f$result.pm
+
+
+
+op <- par(no.readonly = TRUE) # the whole list of settable par's.
+  # make wider left margin to fit contrast labels
+  par(mfrow = c(1,2), mar = 0*rep(1, 4)) # order is c(bottom, left, top, right)
+  plot(step_datcc_f, ylim = c(0, 1), main = "empty model, forward")
+  plot(step_datcc_b, ylim = c(0, 1), main = "full model, backward")
+par(op) # reset plotting options
+
+```
+# Using The final model to do out qda 
+```{R}
+## NOTE HERE
+# set the formula you're using here, then it will be used throughout the rest
+datcc_formula <- step_datcc_b
+
+# Select and print the final model
+#library(MASS)  # don't run library(MASS) because it breaks select() from dplyr
+qda_datcc_final <-
+  MASS::qda(LB_RB ~ HRC_Math + HRC_Mem + PDC_Mem
+            , data = datcc
+  )
+qda_datcc_final
+qda_datcc_final$result.pm
+```
+
+# traing using CV and making Confusion matrix
+```{R}
+# CV = TRUE does jackknife (leave-one-out) crossvalidation
+#library(MASS)  # don't run library(MASS) because it breaks select() from dplyr
+qda_datcc_cv <-
+  MASS::qda(LB_RB ~ HRC_Math + HRC_Mem + PDC_Mem
+            , data = datcc
+  , CV = TRUE
+  )
+#qda_datcc_cv
+
+# Create a table of classification and posterior probabilities for each observation
+classify_datcc <-
+  data.frame(
+    Source = datcc$LB_RB
+  , class = qda_datcc_cv$class
+  , error = ""
+  , round(qda_datcc_cv$posterior, 3)
+  )
+colnames(classify_datcc) <-
+  c(
+    "Source"
+  , "class"
+  , "error"
+  , paste("post", colnames(qda_datcc_cv$posterior), sep="_")
+  )
+
+# error column
+classify_datcc$error <-
+  as.character(classify_datcc$error)
+classify_agree <-
+  as.character(as.numeric(datcc$LB_RB) - as.numeric(qda_datcc_cv$class))
+# print table
+  as.character(as.numeric(datcc$LB_RB) - as.numeric(qda_datcc_cv$class))
+classify_datcc$error[!(classify_agree == 0)] <-
+  classify_agree[!(classify_agree == 0)]
+# print table
+#classify_sjrs
+
+# A list of classification statistics
+library(caret)
+confusionMatrix(
+    data      = qda_datcc_cv$class # predictions
+  , reference = datcc$LB_RB   # true labels
+  , mode      = "sens_spec"       # restrict output to relevant summaries
+)
+
+classify_datcc
+```
+
+#Testing
+
+```{R}
+dat_test <- read_csv(
+    "/Users/venkatkoushikmuthyapu/desktop/rakin/Phase4.csv"
+  ) 
+
+dat_test <-
+  dat_test %>%
+  dplyr::rename(
+    LB_RB = `LB or Rb`
+,   HRC_Math = `HR Change Math test`
+,   HRC_Mem = `HR Change Memory Test`
+,   PDC_Math = `PDC Math Test`
+,   PDC_Mem = `PDC Memory Test`
+,   SPC_Math = `Systolic Pressure Change Math Test`
+,   SPC_Mem = `Systolic Pressure Change Memory Test`
+,   DPC_Math = `Diastolic Pressure Change Math Test`
+,   DPC_Mem = `Diastolic Pressure Change Memory Test`
+)
+
+dat_test <-
+dat_test %>% 
+  select(-`Participant #`)%>%
+  mutate(
+    LB_RB = factor(LB_RB)
+  )
+
+
+final.pred <- predict(
+   qda_datcc_final
+ , newdata = dat_test
+)
+
+
+classify_dat_test <-
+  data.frame(
+    Source = dat_test$LB_RB
+  , class = final.pred$class
+  , round(final.pred$posterior, 3)
+  )
+colnames(classify_dat_test) <-
+  c(
+    "Source"
+  , "class"
+  , paste("post", colnames(final.pred$posterior), sep="_")
+  )
+
+library(caret)
+confusionMatrix(
+    data      = final.pred$class # predictions
+  , reference = dat_test$LB_RB   # true labels
+  , mode      = "sens_spec"       # restrict output to relevant summaries
+)
+
+classify_dat_test
+```
